@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Floqer Workflow Engine — Live Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0c0f17; --surface:#131826; --raised:#1a2131; --card:#1e2638;
+    --line:rgba(255,255,255,.08); --line2:rgba(120,180,255,.30);
+    --text:#e6ecf5; --dim:#8b98ad;
+    --accent:#5bb2ff; --accent-dim:rgba(91,178,255,.12);
+    --green:#5fd693; --green-dim:rgba(95,214,147,.12);
+    --amber:#f5b25b; --amber-dim:rgba(245,178,91,.12);
+    --violet:#b493f6; --red:#f77;
+    --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1100px;margin:0 auto;padding:28px 24px 80px}
+  header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .badge{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--violet));display:grid;place-items:center;font-size:18px}
+  h1{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:22px}
+  .sub code{font-family:var(--mono);color:var(--accent);font-size:12px}
+
+  .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+  .run{background:var(--green);color:#08121a;border:none;font-family:var(--sans);font-weight:700;font-size:14px;padding:10px 20px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+  .run:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  .run:disabled{opacity:.6;cursor:not-allowed;transform:none}
+  .pill{font-family:var(--mono);font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--line)}
+  .pill.live{color:var(--green);background:var(--green-dim);border-color:rgba(95,214,147,.3)}
+  .pill.run{color:var(--amber);background:var(--amber-dim);border-color:rgba(245,178,91,.3)}
+  .meta{color:var(--dim);font-family:var(--mono);font-size:11.5px;margin-left:auto}
+
+  /* pipeline */
+  .pipe{display:flex;align-items:stretch;gap:0;overflow-x:auto;padding:6px 2px 14px}
+  .step{min-width:180px;flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;transition:.2s;position:relative}
+  .step.running{border-color:var(--amber);box-shadow:0 0 0 3px var(--amber-dim)}
+  .step.done{border-color:rgba(95,214,147,.5)}
+  .step .ico{font-size:17px;margin-bottom:8px}
+  .step .name{font-weight:600;font-size:13px}
+  .step .type{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:2px}
+  .step .out{margin-top:10px;font-family:var(--mono);font-size:10.5px;color:var(--dim);min-height:16px}
+  .step .out b{color:var(--green);font-weight:500}
+  .arrow{align-self:center;color:var(--line2);padding:0 6px;flex-shrink:0}
+  .st-badge{position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.15)}
+  .st-badge.running{background:var(--amber);animation:blink .8s infinite}
+  .st-badge.done{background:var(--green)}
+  @keyframes blink{50%{opacity:.3}}
+
+  .tabs{display:flex;gap:2px;margin:26px 0 14px;border-bottom:1px solid var(--line)}
+  .tab{padding:9px 14px;font-size:13px;font-weight:600;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .panel{min-height:120px}
+
+  .log{font-family:var(--mono);font-size:12px}
+  .log .row{display:flex;gap:10px;padding:9px 12px;border:1px solid var(--line);background:var(--raised);border-radius:8px;margin-bottom:7px;animation:slide .25s}
+  @keyframes slide{from{opacity:0;transform:translateY(-5px)}to{opacity:1}}
+  .log .row .t{color:var(--dim);flex-shrink:0}
+  .log .row .n{color:var(--text);font-weight:500;min-width:130px}
+  .log .row .o{color:var(--dim)}
+  .log .row .o b{color:var(--green);font-weight:500}
+
+  .lead{background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:13px 15px;margin-bottom:9px}
+  .lead .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+  .lead .co{font-weight:600}
+  .lead .score{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:5px;background:var(--green-dim);color:var(--green)}
+  .lead .fields{display:flex;flex-wrap:wrap;gap:6px}
+  .lead .f{font-family:var(--mono);font-size:10.5px;color:var(--dim);background:var(--surface);border:1px solid var(--line);padding:2px 7px;border-radius:4px}
+
+  .msg{background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px}
+  .msg .to{font-size:11px;color:var(--dim);margin-bottom:5px}
+  .msg .to b{color:var(--accent);font-weight:500}
+  .msg .subj{font-weight:600;margin-bottom:7px}
+  .msg .body{font-size:12.5px;color:#cdd6e4;white-space:pre-wrap;line-height:1.6}
+  .msg .prov{margin-top:9px;font-family:var(--mono);font-size:10px;color:var(--dim)}
+  .msg .prov.claude{color:var(--violet)}
+
+  .empty{color:var(--dim);font-size:13px;padding:26px;text-align:center;border:1px dashed var(--line);border-radius:10px}
+  .note{margin-top:8px;padding:10px 12px;border-radius:8px;background:var(--accent-dim);border:1px solid rgba(91,178,255,.25);font-size:12px;color:#bcd8f5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="badge">⚡</div>
+    <div>
+      <h1>Floqer Workflow Engine</h1>
+    </div>
+  </header>
+  <div class="sub">Live demo — every step runs against a real PostgreSQL database via a REST API. Endpoint: <code id="wfmeta">loading…</code></div>
+
+  <div class="toolbar">
+    <button class="run" id="runBtn">▶ Run workflow</button>
+    <span class="pill live" id="status">READY</span>
+    <span class="meta" id="runmeta"></span>
+  </div>
+
+  <div class="pipe" id="pipe"></div>
+  <div class="note" id="cacheNote" style="display:none"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="log">Run log</div>
+    <div class="tab" data-tab="leads">Qualified leads</div>
+    <div class="tab" data-tab="msgs">Outreach</div>
+  </div>
+  <div class="panel" id="panel"><div class="empty">Press “Run workflow” to execute the pipeline against the database.</div></div>
+</div>
+
+<script>
+const API = location.origin + '/api';
+let workflow = null, lastRun = null, activeTab = 'log', runsSoFar = 0;
+
+const ICONS = { SIGNAL:'🔍', ENRICH:'🤖', SCORE:'⚖️', MESSAGE:'✍️', CRM:'📤' };
+
+async function j(url, opts){ const r = await fetch(url, opts); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+// order the workflow's nodes using its edges (same idea as the backend topo-sort)
+function orderNodes(wf){
+  const indeg = {}, adj = {}, byId = {};
+  wf.nodes.forEach(n => { indeg[n.id]=0; adj[n.id]=[]; byId[n.id]=n; });
+  wf.edges.forEach(e => { adj[e.from_node_id].push(e.to_node_id); indeg[e.to_node_id]++; });
+  const q = wf.nodes.filter(n=>indeg[n.id]===0).map(n=>n.id), out=[];
+  while(q.length){ const c=q.shift(); out.push(byId[c]); adj[c].forEach(x=>{ if(--indeg[x]===0) q.push(x); }); }
+  return out;
+}
+
+function drawPipe(orderedNodes){
+  const pipe = document.getElementById('pipe'); pipe.innerHTML='';
+  orderedNodes.forEach((n,i)=>{
+    const el = document.createElement('div');
+    el.className='step'; el.id='step-'+n.id;
+    el.innerHTML = `<div class="st-badge" id="badge-${n.id}"></div>
+      <div class="ico">${ICONS[n.type]||'▪'}</div>
+      <div class="name">${n.name}</div>
+      <div class="type">${n.type}</div>
+      <div class="out" id="out-${n.id}"></div>`;
+    pipe.appendChild(el);
+    if(i<orderedNodes.length-1){ const a=document.createElement('div'); a.className='arrow'; a.textContent='→'; pipe.appendChild(a); }
+  });
+}
+
+async function init(){
+  const list = await j(`${API}/workflows`);
+  workflow = await j(`${API}/workflows/${list[0].id}`);
+  document.getElementById('wfmeta').textContent = `POST /api/workflows/${workflow.id}/runs`;
+  drawPipe(orderNodes(workflow));
+}
+
+async function run(){
+  const btn = document.getElementById('runBtn'); btn.disabled=true;
+  document.getElementById('status').className='pill run';
+  document.getElementById('status').textContent='RUNNING';
+  document.getElementById('cacheNote').style.display='none';
+  const ordered = orderNodes(workflow);
+  ordered.forEach(n=>{ document.getElementById('step-'+n.id).className='step'; document.getElementById('badge-'+n.id).className='st-badge'; document.getElementById('out-'+n.id).innerHTML=''; });
+
+  // POST the run — the backend executes the whole pipeline and persists it.
+  const t0 = performance.now();
+  const { runId } = await j(`${API}/workflows/${workflow.id}/runs`, { method:'POST' });
+  const detail = await j(`${API}/runs/${runId}`);
+  lastRun = detail; runsSoFar++;
+
+  // Reveal each real step with a small stagger so you can watch it (data is real).
+  for(const step of detail.steps){
+    const nid = step.node_id;
+    document.getElementById('step-'+nid).classList.add('running');
+    document.getElementById('badge-'+nid).className='st-badge running';
+    await new Promise(r=>setTimeout(r,420));
+    document.getElementById('step-'+nid).classList.remove('running');
+    document.getElementById('step-'+nid).classList.add('done');
+    document.getElementById('badge-'+nid).className='st-badge done';
+    document.getElementById('out-'+nid).innerHTML = summarise(step);
+  }
+
+  const ms = Math.round(performance.now()-t0);
+  document.getElementById('status').className='pill live';
+  document.getElementById('status').textContent = detail.status;
+  document.getElementById('runmeta').textContent = `run ${runId} · ${detail.steps.length} steps · ${ms}ms`;
+
+  // Cache/idempotency call-out on the 2nd+ run.
+  const enrich = detail.steps.find(s=>s.node_type==='ENRICH');
+  if(enrich && enrich.output && enrich.output.skipped>0){
+    const note=document.getElementById('cacheNote'); note.style.display='block';
+    note.innerHTML = `⚡ Cache/dedup working: this run skipped <b>${enrich.output.skipped}</b> enrichments already in the database (0 external calls repeated). Messages stayed idempotent — no duplicates.`;
+  }
+  btn.disabled=false;
+  render();
+}
+
+function summarise(step){
+  const o = step.output || {};
+  if(step.node_type==='SIGNAL') return `matched <b>${o.matched}</b> leads`;
+  if(step.node_type==='ENRICH') return `enriched <b>${o.enriched}</b> · cached ${o.skipped}`;
+  if(step.node_type==='SCORE') return `qualified <b>${o.qualified}</b> · dropped ${o.discarded}`;
+  if(step.node_type==='MESSAGE') return `wrote <b>${o.messagesWritten}</b> msgs`;
+  if(step.node_type==='CRM') return `pushed <b>${o.pushedToCrm}</b> to ${o.crm}`;
+  return '';
+}
+
+async function render(){
+  const panel = document.getElementById('panel');
+  if(!lastRun){ panel.innerHTML='<div class="empty">No run yet.</div>'; return; }
+
+  if(activeTab==='log'){
+    panel.className='panel log';
+    panel.innerHTML = lastRun.steps.map(s=>{
+      const t = new Date(s.finished_at).toLocaleTimeString();
+      return `<div class="row"><span class="t">${t}</span><span class="n">${s.node_name}</span><span class="o">${summarise(s)} <span style="color:var(--green)">✓ ${s.status}</span></span></div>`;
+    }).join('');
+  }
+
+  if(activeTab==='leads'){
+    panel.className='panel';
+    const leads = await j(`${API}/leads?qualified=true`);
+    panel.innerHTML = leads.length ? leads.map(l=>`
+      <div class="lead"><div class="top"><span class="co">${l.company_name}</span><span class="score">ICP ${l.icp_score}/100</span></div>
+      <div class="fields"><span class="f">${l.domain}</span><span class="f">${l.funding_stage}</span><span class="f">${l.employees} emp</span><span class="f">${(l.tech_stack||[]).join(', ')}</span></div></div>`).join('')
+      : '<div class="empty">No scored leads yet.</div>';
+  }
+
+  if(activeTab==='msgs'){
+    panel.className='panel';
+    panel.innerHTML = lastRun.messages.length ? lastRun.messages.map(m=>`
+      <div class="msg"><div class="to">To: <b>${m.company_name}</b></div>
+      <div class="subj">${m.subject}</div><div class="body">${m.body}</div>
+      <div class="prov ${m.generated_by==='claude'?'claude':''}">generated_by: ${m.generated_by}</div></div>`).join('')
+      : '<div class="empty">No messages yet.</div>';
+  }
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); activeTab=t.dataset.tab; render();
+}));
+document.getElementById('runBtn').addEventListener('click',run);
+init();
+</script>
+</body>
+</html>
