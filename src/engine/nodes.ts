@@ -44,7 +44,6 @@ export async function runEnrich(config: any, ctx: Ctx) {
       enriched++;
     }
   }
-
   if (values.length > 0) {
     await query(
       `INSERT INTO enrichment (id, lead_id, source, data) VALUES ${values.join(',')}
@@ -56,34 +55,49 @@ export async function runEnrich(config: any, ctx: Ctx) {
   return { enriched, skipped, note: 'skipped = served from cache (dedup)' };
 }
 
-// SCORE: compute an ICP score per lead, keep only those above threshold.
+// SCORE: one SELECT for all leads, compute in memory, one batched UPDATE.
 export async function runScore(config: any, ctx: Ctx) {
+  if (ctx.leadIds.length === 0) return { qualified: 0, discarded: 0, threshold: config.threshold };
+  const leads = await query<any>(`SELECT * FROM lead WHERE id = ANY($1::text[])`, [ctx.leadIds]);
+  const w = config.weights;
+
+  const ids: string[] = [];
+  const scores: number[] = [];
   const kept: string[] = [];
-  for (const leadId of ctx.leadIds) {
-    const [lead] = await query<any>(`SELECT * FROM lead WHERE id = $1`, [leadId]);
-    if (!lead) continue;
+  for (const lead of leads) {
     const fundingScore = lead.funding_stage === 'Series B' ? 100 : 60;
     const techScore = lead.tech_stack.length >= 3 ? 100 : 70;
     const signalScore = lead.hiring_signal ? 100 : 40;
-    const w = config.weights;
-    const score = Math.round(
-      fundingScore * w.funding + techScore * w.techFit + signalScore * w.signalRecency
+    const score = Math.round(fundingScore * w.funding + techScore * w.techFit + signalScore * w.signalRecency);
+    ids.push(lead.id);
+    scores.push(score);
+    if (score >= config.threshold) kept.push(lead.id);
+  }
+
+  // One UPDATE for every lead using unnest, instead of N updates.
+  if (ids.length > 0) {
+    await query(
+      `UPDATE lead AS l SET icp_score = d.score
+       FROM (SELECT unnest($1::text[]) AS id, unnest($2::int[]) AS score) AS d
+       WHERE l.id = d.id`,
+      [ids, scores]
     );
-    await query(`UPDATE lead SET icp_score = $1 WHERE id = $2`, [score, leadId]);
-    if (score >= config.threshold) kept.push(leadId);
   }
   const discarded = ctx.leadIds.length - kept.length;
   ctx.leadIds = kept;
   return { qualified: kept.length, discarded, threshold: config.threshold };
 }
 
-// MESSAGE: write outreach per qualified lead (real Claude call, template fallback).
+// MESSAGE: fetch all qualified leads once, build messages, one batched insert.
 export async function runMessage(config: any, ctx: Ctx) {
-  let written = 0;
+  if (ctx.leadIds.length === 0) return { messagesWritten: 0, viaClaude: 0, viaTemplate: 0 };
+  const leads = await query<any>(`SELECT * FROM lead WHERE id = ANY($1::text[])`, [ctx.leadIds]);
+
+  const values: string[] = [];
+  const params: any[] = [];
+  let i = 1;
   let viaClaude = 0;
-  for (const leadId of ctx.leadIds) {
-    const [lead] = await query<any>(`SELECT * FROM lead WHERE id = $1`, [leadId]);
-    if (!lead) continue;
+  for (const lead of leads) {
     const msg = await writeOutreach({
       companyName: lead.company_name,
       fundingStage: lead.funding_stage,
@@ -91,14 +105,17 @@ export async function runMessage(config: any, ctx: Ctx) {
       hiringSignal: lead.hiring_signal,
     });
     if (msg.generatedBy === 'claude') viaClaude++;
-    await query(
-      `INSERT INTO message (id, run_id, lead_id, subject, body, generated_by)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (run_id, lead_id) DO NOTHING`,
-      [id('msg'), ctx.runId, leadId, msg.subject, msg.body, msg.generatedBy]
-    );
-    written++;
+    values.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`);
+    params.push(id('msg'), ctx.runId, lead.id, msg.subject, msg.body, msg.generatedBy);
   }
+  if (values.length > 0) {
+    await query(
+      `INSERT INTO message (id, run_id, lead_id, subject, body, generated_by) VALUES ${values.join(',')}
+       ON CONFLICT (run_id, lead_id) DO NOTHING`,
+      params
+    );
+  }
+  const written = values.length;
   return { messagesWritten: written, viaClaude, viaTemplate: written - viaClaude };
 }
 
